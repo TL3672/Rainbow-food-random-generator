@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Cat Food Random Picker</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; max-width: 760px; }
+    textarea { width: 100%; min-height: 240px; font-size: 14px; padding: 12px; }
+    button { font-size: 16px; padding: 10px 14px; margin-top: 12px; cursor: pointer; }
+    .card { margin-top: 16px; padding: 14px; border: 1px solid #ddd; border-radius: 12px; }
+    .label { font-size: 12px; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.06em; }
+    .value { font-size: 20px; margin-top: 6px; font-weight: 650; }
+    .small { font-size: 13px; opacity: 0.8; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Cat Food Random Picker</h1>
+  <p>Each line must end with <code>xN</code>. Every unit has equal probability. The same food will not be picked twice in a row.</p>
+
+  <textarea id="list">
+Tiki cat Chicken in broth x1
+Tiki cat Chicken and quail egg x2
+Tiki cat Chicken and beef x4
+Tiki cat Chicken and lamb x4
+Tiki cat Chicken and duck x4
+Ziwi Mackerel x1
+Ziwi Lamb x1
+Ziwi Lamb and Mackerel x1
+Ziwi Venison x1
+Ziwi Beef x1
+Ziwi Chicken x1
+Instinct Original x1
+Orijen Chicken and salmon x2
+  </textarea>
+
+  <button id="pickBtn">Pick next food</button>
+
+  <div class="card">
+    <div class="label">Selected</div>
+    <div id="picked" class="value">—</div>
+    <div class="small" id="meta">No pick yet.</div>
+  </div>
+
+  <script>
+    let lastPick = null;
+
+    function parseLines(text) {
+      const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+      const pool = [];
+      const re = /^(.*)\s+x(\d+)\s*$/i;
+
+      for (const line of lines) {
+        const m = line.match(re);
+        if (!m) throw new Error(`Bad line (must end with xN): ${line}`);
+        const count = parseInt(m[2], 10);
+        if (!Number.isFinite(count) || count <= 0) throw new Error(`Bad count in: ${line}`);
+        for (let i = 0; i < count; i++) pool.push(line);
+      }
+      return pool;
+    }
+
+    function pickFromPool(pool, previous) {
+      if (pool.length === 0) throw new Error("Empty pool.");
+      if (previous !== null && pool.every(x => x === previous)) return previous;
+
+      let choice = pool[Math.floor(Math.random() * pool.length)];
+      while (previous !== null && choice === previous) {
+        choice = pool[Math.floor(Math.random() * pool.length)];
+      }
+      return choice;
+    }
+
+    document.getElementById("pickBtn").addEventListener("click", () => {
+      try {
+        const text = document.getElementById("list").value;
+        const pool = parseLines(text);
+        const picked = pickFromPool(pool, lastPick);
+        lastPick = picked;
+
+        document.getElementById("picked").textContent = picked;
+        document.getElementById("meta").textContent =
+          `Expanded pool size: ${pool.length}. Repeat avoidance active.`;
+      } catch (e) {
+        alert(e.message);
+      }
+    });
+  </script>
+</body>
+</html>
