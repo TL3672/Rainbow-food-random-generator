@@ -42,49 +42,55 @@ Orijen Chicken and salmon x2
     <div class="small" id="meta">No pick yet.</div>
   </div>
 
-  <script>
-    let lastPick = null;
+ <script>
+  let lastPickName = null;
 
-    function parseLines(text) {
-      const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
-      const pool = [];
-      const re = /^(.*)\s+x(\d+)\s*$/i;
+  function parseLines(text) {
+    const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+    const pool = [];
+    const re = /^(.*)\s+x(\d+)\s*$/i;
 
-      for (const line of lines) {
-        const m = line.match(re);
-        if (!m) throw new Error(`Bad line (must end with xN): ${line}`);
-        const count = parseInt(m[2], 10);
-        if (!Number.isFinite(count) || count <= 0) throw new Error(`Bad count in: ${line}`);
-        for (let i = 0; i < count; i++) pool.push(line);
-      }
-      return pool;
+    for (const line of lines) {
+      const m = line.match(re);
+      if (!m) throw new Error(`Bad line (must end with xN): ${line}`);
+      const name = m[1].trim();          // display name (NO xN)
+      const count = parseInt(m[2], 10);  // weighting
+      if (!Number.isFinite(count) || count <= 0) throw new Error(`Bad count in: ${line}`);
+
+      // Expand by count so each unit has identical probability.
+      for (let i = 0; i < count; i++) pool.push(name);
     }
+    return pool;
+  }
 
-    function pickFromPool(pool, previous) {
-      if (pool.length === 0) throw new Error("Empty pool.");
-      if (previous !== null && pool.every(x => x === previous)) return previous;
+  function pickFromPool(pool, previousName) {
+    if (pool.length === 0) throw new Error("Empty pool.");
 
-      let choice = pool[Math.floor(Math.random() * pool.length)];
-      while (previous !== null && choice === previous) {
-        choice = pool[Math.floor(Math.random() * pool.length)];
-      }
-      return choice;
+    // If avoiding repeats is impossible (pool contains only one unique name)
+    const unique = new Set(pool);
+    if (previousName !== null && unique.size === 1) return [...unique][0];
+
+    let choice = pool[Math.floor(Math.random() * pool.length)];
+    while (previousName !== null && choice === previousName) {
+      choice = pool[Math.floor(Math.random() * pool.length)];
     }
+    return choice;
+  }
 
-    document.getElementById("pickBtn").addEventListener("click", () => {
-      try {
-        const text = document.getElementById("list").value;
-        const pool = parseLines(text);
-        const picked = pickFromPool(pool, lastPick);
-        lastPick = picked;
+  document.getElementById("pickBtn").addEventListener("click", () => {
+    try {
+      const text = document.getElementById("list").value;
+      const pool = parseLines(text);
+      const pickedName = pickFromPool(pool, lastPickName);
+      lastPickName = pickedName;
 
-        document.getElementById("picked").textContent = picked;
-        document.getElementById("meta").textContent =
-          `Expanded pool size: ${pool.length}. Repeat avoidance active.`;
-      } catch (e) {
-        alert(e.message);
-      }
-    });
-  </script>
+      document.getElementById("picked").textContent = pickedName;
+      document.getElementById("meta").textContent =
+        `Expanded pool size: ${pool.length}. Repeat avoidance active.`;
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+</script>
 </body>
 </html>
