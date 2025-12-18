@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Cat Food Picker</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; max-width: 860px; }
+    textarea { width: 100%; min-height: 240px; font-size: 14px; padding: 12px; }
+    button { font-size: 16px; padding: 10px 14px; margin-top: 12px; cursor: pointer; }
+    .row { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    @media (min-width: 760px) { .row { grid-template-columns: 1fr 1fr; } }
+    .card { margin-top: 16px; padding: 14px; border: 1px solid #ddd; border-radius: 12px; }
+    .label { font-size: 12px; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.06em; }
+    .value { font-size: 22px; margin-top: 6px; font-weight: 650; }
+    .small { font-size: 13px; opacity: 0.85; margin-top: 10px; line-height: 1.35; }
+    select { margin-top: 8px; padding: 10px; font-size: 16px; width: 100%; }
+    .muted { opacity: 0.8; }
+    .pill { display:inline-block; padding:2px 8px; border:1px solid #ddd; border-radius: 999px; font-size:12px; margin-left:8px; }
+  </style>
+</head>
+<body>
+  <h1>Cat Food Picker</h1>
+  <p class="muted">
+    Each line must end with <code>xN</code>. The number is used for weighting and remaining inventory.
+    <span class="pill">Random pick = preview only (no decrement)</span>
+    <span class="pill">Manual pick = decrements inventory</span>
+  </p>
+
+  <div class="row">
+    <div>
+      <div class="label">Inventory list</div>
+      <textarea id="list">
+Tiki cat Chicken in broth x1
+Tiki cat Chicken and quail egg x2
+Tiki cat Chicken and beef x4
+Tiki cat Chicken and lamb x4
+Tiki cat Chicken and duck x4
+Ziwi Mackerel x1
+Ziwi Lamb x1
+Ziwi Lamb and Mackerel x1
+Ziwi Venison x1
+Ziwi Beef x1
+Ziwi Chicken x1
+Instinct Original x1
+Orijen Chicken and salmon x2
+      </textarea>
+
+      <button id="pickBtn">Random pick (preview)</button>
+
+      <div class="card">
+        <div class="label">Random suggestion</div>
+        <div id="picked" class="value">—</div>
+        <div id="meta" class="small">Click “Random pick (preview)” to get a suggestion. Inventory will not change.</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card" style="margin-top:0;">
+        <div class="label">Manual selection (decrements)</div>
+
+        <select id="manualSelect">
+          <option value="">— Select a food —</option>
+        </select>
+
+        <button id="manualBtn">Use selected food (decrement)</button>
+
+        <div class="small" id="manualHint">
+          Use this if you actually fed a specific food (including the random suggestion). This will reduce its <code>xN</code> by 1.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="label">Notes</div>
+        <div class="small">
+          • Random picks avoid repeating the last <em>random</em> suggestion when possible.<br>
+          • Manual picks can be anything; they do not affect the “no-repeat” rule unless you want them to (easy to change).<br>
+          • Everything is saved in your browser on this device.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY_LIST = "catfood_list_v3";
+    const STORAGE_KEY_LAST_RANDOM = "catfood_last_random_v3";
+
+    let lastRandomPick = null;
+
+    function parseList(text) {
+      const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+      const regex = /^(.*)\s+x(\d+)\s*$/i;
+
+      const items = [];
+      for (const line of lines) {
+        const m = line.match(regex);
+        if (!m) throw new Error("Each line must end with xN: " + line);
+        const name = m[1].trim();
+        const count = parseInt(m[2], 10);
+        if (!Number.isFinite(count) || count < 0) throw new Error("Invalid quantity in line: " + line);
+        items.push({ name, count });
+      }
+      return items;
+    }
+
+    function formatList(items) {
+      return items.map(it => `${it.name} x${it.count}`).join("\n");
+    }
+
+    function remainingTotal(items) {
+      return items.reduce((sum, it) => sum + it.count, 0);
+    }
+
+    // Weighted random pick by remaining count, avoiding immediate repeat vs lastRandomPick if possible
+    function weightedPick(items, previousName) {
+      const available = items.filter(it => it.count > 0);
+      if (available.length === 0) throw new Error("No items left (all quantities are 0).");
+
+      let pool = available;
+      if (previousName) {
+        const withoutPrev = available.filter(it => it.name !== previousName);
+        if (withoutPrev.length > 0) pool = withoutPrev;
+      }
+
+      const total = pool.reduce((sum, it) => sum + it.count, 0);
+      let r = Math.random() * total;
+
+      for (const it of pool) {
+        r -= it.count;
+        if (r < 0) return it.name;
+      }
+      return pool[pool.length - 1].name;
+    }
+
+    function decrement(items, pickedName) {
+      const it = items.find(x => x.name === pickedName);
+      if (!it) throw new Error("Could not find item: " + pickedName);
+      if (it.count <= 0) throw new Error(`"${pickedName}" is already at 0.`);
+      it.count -= 1;
+    }
+
+    function saveList(text) {
+      localStorage.setItem(STORAGE_KEY_LIST, text);
+    }
+
+    function saveLastRandom(name) {
+      localStorage.setItem(STORAGE_KEY_LAST_RANDOM, name ?? "");
+    }
+
+    function loadState() {
+      return {
+        list: localStorage.getItem(STORAGE_KEY_LIST),
+        lastRandom: localStorage.getItem(STORAGE_KEY_LAST_RANDOM) || ""
+      };
+    }
+
+    function refreshManualDropdown(items) {
+      const sel = document.getElementById("manualSelect");
+      const current = sel.value;
+
+      sel.innerHTML = `<option value="">— Select a food —</option>`;
+      for (const it of items) {
+        if (it.count > 0) {
+          const opt = document.createElement("option");
+          opt.value = it.name;
+          opt.textContent = `${it.name} (left: ${it.count})`;
+          sel.appendChild(opt);
+        }
+      }
+      if ([...sel.options].some(o => o.value === current)) sel.value = current;
+    }
+
+    // INIT
+    (function init() {
+      const ta = document.getElementById("list");
+      const st = loadState();
+      if (st.list) ta.value = st.list;
+      if (st.lastRandom) lastRandomPick = st.lastRandom;
+
+      // Save on edits + refresh dropdown
+      ta.addEventListener("input", () => {
+        saveList(ta.value);
+        try { refreshManualDropdown(parseList(ta.value)); } catch (_) {}
+      });
+
+      try { refreshManualDropdown(parseList(ta.value)); } catch (_) {}
+    })();
+
+    // RANDOM PICK (PREVIEW ONLY — no decrement)
+    document.getElementById("pickBtn").addEventListener("click", () => {
+      try {
+        const ta = document.getElementById("list");
+        const items = parseList(ta.value);
+
+        const picked = weightedPick(items, lastRandomPick);
+        lastRandomPick = picked;
+        saveLastRandom(lastRandomPick);
+
+        document.getElementById("picked").textContent = picked;
+        document.getElementById("meta").textContent =
+          `Preview only (inventory unchanged). Remaining total units: ${remainingTotal(items)}.`;
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+
+    // MANUAL PICK (DECREMENTS)
+    document.getElementById("manualBtn").addEventListener("click", () => {
+      try {
+        const ta = document.getElementById("list");
+        const items = parseList(ta.value);
+
+        const chosen = document.getElementById("manualSelect").value;
+        if (!chosen) throw new Error("Pick a food from the dropdown first.");
+
+        decrement(items, chosen);
+
+        ta.value = formatList(items);
+        saveList(ta.value);
+        refreshManualDropdown(items);
+
+        document.getElementById("picked").textContent = chosen;
+        document.getElementById("meta").textContent =
+          `Manual pick saved (inventory decremented). Remaining total units: ${remainingTotal(items)}.`;
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  </script>
+</body>
+</html>
